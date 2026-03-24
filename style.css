@@ -1,0 +1,106 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body { 
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+    background: #f0f2f5; 
+    color: #1c1e21; 
+    line-height: 1.6;
+}
+
+.container { 
+    max-width: 1000px; 
+    margin: 40px auto; 
+    padding: 20px;
+    text-align: center; 
+}
+
+h1 { margin-bottom: 5px; color: #1877f2; }
+p { color: #606770; margin-bottom: 30px; }
+
+.dashboard { 
+    display: grid; 
+    grid-template-columns: 350px 1fr; 
+    gap: 25px; 
+}
+
+.stats-card, .log-card { 
+    background: #ffffff; 
+    padding: 30px; 
+    border-radius: 15px; 
+    /* Fixed the shadow error here */
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08); 
+}
+
+/* Ensure the chart doesn't grow too large */
+#attendanceChart {
+    max-width: 250px;
+    margin: 0 auto 20px auto;
+}
+
+#percentageText {
+    font-size: 2.5rem;
+    color: #28a745;
+    font-weight: bold;
+}
+
+.date-grid { 
+    display: grid; 
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); 
+    gap: 15px; 
+    max-height: 450px; 
+    overflow-y: auto; 
+    margin-bottom: 20px;
+    padding: 10px;
+    border: 1px solid #eee;
+    border-radius: 10px;
+}
+
+.date-item { 
+    background: #f9f9f9;
+    padding: 12px; 
+    border: 1px solid #e4e6eb; 
+    border-radius: 10px; 
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.date-item span {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+select { 
+    width: 100%; 
+    padding: 8px;
+    border-radius: 6px; 
+    border: 1px solid #ccd0d5; 
+    background-color: #fff;
+    cursor: pointer;
+}
+
+button { 
+    background: #1877f2; 
+    color: white; 
+    border: none; 
+    padding: 12px 30px; 
+    border-radius: 8px; 
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer; 
+    transition: background 0.3s ease;
+}
+
+button:hover {
+    background: #166fe5;
+}
+
+/* Responsive for mobile */
+@media (max-width: 768px) {
+    .dashboard { grid-template-columns: 1fr; }
+}
