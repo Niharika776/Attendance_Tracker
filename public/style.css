@@ -1,0 +1,69 @@
+:root {
+    --pastel-blue: #a2d2ff;
+    --pastel-green: #bafca2;
+    --pastel-pink: #ffafcc;
+    --pastel-yellow: #fcf6bd;
+    --bg-gray: #f8f9fa;
+    --text-main: #495057;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: var(--bg-gray); color: var(--text-main); line-height: 1.6; }
+.container { max-width: 1100px; margin: 40px auto; padding: 20px; text-align: center; }
+
+/* Global Gauge Section */
+.wide-card { display: flex; align-items: center; justify-content: center; gap: 40px; margin-bottom: 30px; border-radius: 20px; background: white; padding: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.05); }
+.chart-container { width: 220px; height: 120px; position: relative; }
+.global-info h1 { font-size: 3.5rem; color: var(--text-main); }
+
+/* Subject Cards */
+.subject-card { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; text-align: left; }
+.subject-header h3 { color: #5a7bd5; margin-bottom: 15px; text-transform: capitalize; font-size: 1.4rem; }
+
+/* Calendar Container with Leading Badge */
+.calendar-container { display: flex; align-items: center; gap: 20px; }
+
+.subject-status-lead {
+    min-width: 100px; height: 115px; border-radius: 18px;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 2px solid rgba(255,255,255,0.6);
+}
+.subject-status-lead .label { font-size: 0.65rem; text-transform: uppercase; font-weight: bold; opacity: 0.7; }
+.subject-status-lead .value { font-size: 1.8rem; font-weight: 800; }
+
+/* Monthly Horizontal Strip */
+.calendar-strip { display: flex; gap: 12px; overflow-x: auto; padding: 10px 0; width: 100%; scroll-behavior: smooth; }
+.date-chip { 
+    min-width: 90px; background: #fff; border: 1px solid #eee; padding: 12px; 
+    border-radius: 15px; display: flex; flex-direction: column; align-items: center; flex-shrink: 0; 
+}
+.date-chip .day-name { font-size: 0.7rem; color: #888; text-transform: uppercase; }
+.date-chip .date-num { font-size: 0.9rem; font-weight: 700; margin-bottom: 5px; }
+
+/* Status Colors */
+.date-chip.present { border-top: 6px solid var(--pastel-green); }
+.date-chip.absent { border-top: 6px solid var(--pastel-pink); }
+.date-chip.cancelled { border-top: 6px solid var(--pastel-yellow); }
+.date-chip.no-class { background: #f1f3f5; opacity: 0.5; border: 1px dashed #ccc; }
+
+/* Wizard Styling */
+.wizard-card { text-align: left; max-width: 700px; margin: auto; }
+.subject-entry { background: #fafbff; border: 2px dashed var(--pastel-blue); padding: 20px; border-radius: 15px; margin: 15px 0; animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+.day-checkbox { background: #fff; border: 1px solid #ddd; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; cursor: pointer; display: inline-block; margin: 4px; transition: 0.2s; }
+.day-checkbox:hover { background: var(--pastel-blue); }
+
+button { padding: 12px 24px; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; background: var(--pastel-blue); color: #444; }
+button:hover { transform: translateY(-2px); opacity: 0.9; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+
+@media (max-width: 768px) { .wide-card { flex-direction: column; } .calendar-container { flex-direction: column; align-items: flex-start; } }
+
+
+.last-updated {
+    font-size: 0.7rem;
+    color: #999;
+    font-style: italic;
+    margin-bottom: 10px;
+    display: block;
+}

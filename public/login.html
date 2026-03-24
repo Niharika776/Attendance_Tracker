@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Login | Attendance Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="log-card" style="max-width: 400px; margin: 100px auto;">
+            <h2>User Login</h2>
+            <form id="loginForm">
+                <input type="text" id="username" placeholder="Username" required style="width: 100%; margin: 10px 0; padding: 12px; border-radius: 5px; border: 1px solid #ccc;">
+                <input type="password" id="password" placeholder="Password" required style="width: 100%; margin: 10px 0; padding: 12px; border-radius: 5px; border: 1px solid #ccc;">
+                <button type="submit">Enter Dashboard</button>
+            </form>
+        </div>
+    </div>
+    <script>
+        document.getElementById('loginForm').onsubmit = (e) => {
+            e.preventDefault();
+            // Redirect to the dashboard
+            window.location.href = '/dashboard'; 
+        };
+    </script>
+</body>
+</html>
