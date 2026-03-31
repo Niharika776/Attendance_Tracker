@@ -1,33 +1,46 @@
-let config = JSON.parse(localStorage.getItem('attendanceConfig')) || { subjects: [], cancelMode: 'holiday' };
-let attendanceData = JSON.parse(localStorage.getItem('attendanceData')) || { lastUpdated: {} }; // Added lastUpdated tracker
+let config = { subjects: [], cancelMode: 'holiday' };
+let attendanceData = { lastUpdated: {} };
 let globalChart = null;
 
-function init() {
-    if (config.subjects.length === 0) {
+// --- 1. INITIALIZATION (FETCH FROM DATABASE) ---
+async function init() {
+    try {
+        const response = await fetch('/api/load-data');
+        const data = await response.json();
+
+        if (data.subjects && data.subjects.length > 0) {
+            // Transform database rows back into our app's format
+            config.subjects = data.subjects;
+            
+            // Reconstruct attendanceData object from array of logs
+            attendanceData = { lastUpdated: {} };
+            data.attendance.forEach(log => {
+                const dateStr = new Date(log.date).toISOString().split('T')[0];
+                const key = `${dateStr}-${log.subject_name}`;
+                attendanceData[key] = log.status;
+            });
+
+            renderDashboard();
+        } else {
+            showSetupWizard();
+        }
+    } catch (err) {
+        console.error("Failed to load from DB:", err);
+        // Fallback to Wizard if DB is empty or unreachable
         showSetupWizard();
-    } else {
-        renderDashboard();
     }
 }
 
-// --- SETUP WIZARD ---
+// --- 2. SETUP WIZARD ---
 function showSetupWizard() {
     const container = document.querySelector('.container');
     container.innerHTML = `
         <div class="log-card wizard-card">
             <h2>🌸 Semester Setup</h2>
-            <p>Define your subjects and their weekly schedules.</p>
-            <div style="margin: 20px 0;">
-                <label>Cancelled classes count as: 
-                    <select id="cancelMode" style="padding: 8px; border-radius: 8px;">
-                        <option value="holiday">Holiday (Neutral)</option>
-                        <option value="absent">Absent (Decreases %)</option>
-                    </select>
-                </label>
-            </div>
+            <p>Your settings will now be saved to PostgreSQL.</p>
             <div id="subjectInputList"></div>
-            <button onclick="addSubjectInput()" style="background: var(--pastel-pink); margin-top: 10px;">+ Add Subject</button>
-            <button onclick="saveSetup()" style="background: var(--pastel-green); width: 100%; margin-top: 20px; font-size: 1.1rem;">Launch Dashboard</button>
+            <button onclick="addSubjectInput()" style="background: var(--pastel-pink); margin: 10px 0;">+ Add Subject</button>
+            <button onclick="saveSetup()" style="background: var(--pastel-green); width: 100%; margin-top: 20px;">Save to Database</button>
         </div>
     `;
     addSubjectInput();
@@ -38,37 +51,53 @@ function addSubjectInput() {
     const div = document.createElement('div');
     div.className = 'subject-entry';
     div.innerHTML = `
-        <input type="text" placeholder="Subject Name (e.g. DBMS)" class="sub-name" style="width:100%; padding:12px; margin-bottom:12px; border-radius:10px; border:1px solid #ddd;">
+        <input type="text" placeholder="Subject Name" class="sub-name" style="width:100%; padding:10px; margin-bottom:10px; border-radius:8px; border:1px solid #ddd;">
         <div class="days-selection">
-            <p style="font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; color: #888;">Select Class Days:</p>
             ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => `
-                <label class="day-checkbox">
-                    <input type="checkbox" value="${i}"> ${day}
-                </label>
+                <label class="day-checkbox"><input type="checkbox" value="${i}"> ${day}</label>
             `).join('')}
         </div>
     `;
     list.appendChild(div);
 }
 
-function saveSetup() {
+// --- 3. SYNCING TO DATABASE (POST REQUEST) ---
+async function saveSetup() {
     const entries = document.querySelectorAll('.subject-entry');
-    config.cancelMode = document.getElementById('cancelMode').value;
     config.subjects = [];
     entries.forEach(entry => {
         const name = entry.querySelector('.sub-name').value;
         const days = Array.from(entry.querySelectorAll('input[type="checkbox"]:checked')).map(cb => parseInt(cb.value));
         if (name) config.subjects.push({ name, days });
     });
+
     if (config.subjects.length > 0) {
-        localStorage.setItem('attendanceConfig', JSON.stringify(config));
+        await syncWithDatabase();
         location.reload();
     } else {
-        alert("Please add at least one subject name!");
+        alert("Please add at least one subject!");
     }
 }
 
-// --- DASHBOARD RENDERING ---
+async function syncWithDatabase() {
+    try {
+        const response = await fetch('/api/save-attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                attendance: attendanceData,
+                subjects: config.subjects
+            })
+        });
+        const result = await response.json();
+        console.log(result.message);
+    } catch (err) {
+        console.error("Sync failed:", err);
+        alert("Could not save to Database. Check your server terminal.");
+    }
+}
+
+// --- 4. DASHBOARD & INTERACTION ---
 function renderDashboard() {
     updateGlobalStats();
     const dash = document.getElementById('mainDashboard');
@@ -76,13 +105,10 @@ function renderDashboard() {
 
     config.subjects.forEach(sub => {
         const stats = calculateSubjectStats(sub.name);
-        const lastMod = (attendanceData.lastUpdated && attendanceData.lastUpdated[sub.name]) ? attendanceData.lastUpdated[sub.name] : 'Never';
-        
         const card = document.createElement('div');
         card.className = 'subject-card';
         card.innerHTML = `
             <div class="subject-header"><h3>${sub.name}</h3></div>
-            <span class="last-updated">Last Logged: ${lastMod}</span>
             <div class="calendar-container">
                 <div class="subject-status-lead" style="background: ${stats.percent >= 75 ? 'var(--pastel-green)' : 'var(--pastel-pink)'}">
                     <span class="label">Current</span>
@@ -112,7 +138,7 @@ function generateDateStrip(sub) {
                 <div class="date-chip ${status.toLowerCase()}">
                     <span class="day-name">${d.toLocaleDateString('en-US', { weekday: 'short' })}</span>
                     <span class="date-num">${d.getDate()} ${d.toLocaleDateString('en-US', { month: 'short' })}</span>
-                    <select onchange="markStatus('${key}', '${sub.name}', this.value)">
+                    <select onchange="markStatus('${key}', this.value)">
                         <option value="None" ${status === 'None' ? 'selected' : ''}>-</option>
                         <option value="Present" ${status === 'Present' ? 'selected' : ''}>P</option>
                         <option value="Absent" ${status === 'Absent' ? 'selected' : ''}>A</option>
@@ -134,19 +160,13 @@ function calculateSubjectStats(subjectName) {
     const records = Object.keys(attendanceData).filter(k => k.endsWith(subjectName)).map(k => attendanceData[k]);
     const present = records.filter(v => v === 'Present').length;
     let total = records.filter(v => v === 'Present' || v === 'Absent').length;
-    if (config.cancelMode === 'absent') total += records.filter(v => v === 'Cancelled').length;
     return { present, total, percent: total === 0 ? 100 : Math.round((present / total) * 100) };
 }
 
-function markStatus(key, subjectName, status) {
+async function markStatus(key, status) {
     attendanceData[key] = status;
-    
-    // Update the timestamp for this specific subject
-    if (!attendanceData.lastUpdated) attendanceData.lastUpdated = {};
-    const now = new Date();
-    attendanceData.lastUpdated[subjectName] = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    
-    localStorage.setItem('attendanceData', JSON.stringify(attendanceData));
+    // Every time you change a status, we sync to the DB!
+    await syncWithDatabase(); 
     renderDashboard();
 }
 
@@ -155,9 +175,6 @@ function updateGlobalStats() {
     config.subjects.forEach(s => { const st = calculateSubjectStats(s.name); tP += st.present; tC += st.total; });
     const percent = tC === 0 ? 100 : Math.round((tP / tC) * 100);
     document.getElementById('globalPercentageText').innerText = percent + "%";
-    const msg = document.getElementById('statusMessage');
-    msg.innerText = percent >= 75 ? "Eligible for Exams! ✨" : "Low Attendance! ⚠️";
-    msg.style.color = percent >= 75 ? "#77dd77" : "#ff6961";
     renderGlobalChart(percent);
 }
 
@@ -170,6 +187,12 @@ function renderGlobalChart(percent) {
     });
 }
 
-function resetSetup() { if(confirm("This will clear all subjects and attendance. Continue?")) { localStorage.clear(); location.reload(); } }
+function resetSetup() { 
+    if(confirm("Permanently clear database?")) { 
+        // We will implement a DELETE route later if needed
+        localStorage.clear(); 
+        location.reload(); 
+    } 
+}
 
 init();
