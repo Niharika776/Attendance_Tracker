@@ -2,27 +2,50 @@ let config = { subjects: [], semesterStart: null, semesterEnd: null };
 let attendanceData = {};
 let globalChart = null;
 
-const userId = localStorage.getItem('attendance_user_id');
+const token    = localStorage.getItem('attendance_token');
+const username = localStorage.getItem('attendance_username') || 'User';
 
+// ── Guard ─────────────────────────────────────────────────────────────────────
 if (window.location.pathname !== '/dashboard') {
-    // on login page, do nothing
+    // on login page — do nothing
 } else {
-    if (!userId || userId === 'null' || userId === 'undefined') {
+    if (!token || token === 'null') {
         window.location.href = '/';
     } else {
+        const nameEl = document.getElementById('usernameDisplay');
+        if (nameEl) nameEl.textContent = `👤 ${username}`;
         init();
     }
 }
 
+// Helper: all fetch calls now send JWT in Authorization header
+function authFetch(url, options = {}) {
+    return fetch(url, {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            ...(options.headers || {})
+        }
+    });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
     try {
-        const res = await fetch(`/api/load-data?userId=${userId}`);
-        if (!res.ok) throw new Error('Server error');
+        const res = await authFetch('/api/load-data');
+
+        // Token expired or invalid
+        if (res.status === 401 || res.status === 403) {
+            logout();
+            return;
+        }
+
         const data = await res.json();
         if (data.subjects && data.subjects.length > 0) {
-            config.subjects = data.subjects;
+            config.subjects      = data.subjects;
             config.semesterStart = data.semesterStart;
-            config.semesterEnd = data.semesterEnd;
+            config.semesterEnd   = data.semesterEnd;
             data.attendance.forEach(log => {
                 const dateStr = new Date(log.date).toISOString().split('T')[0];
                 attendanceData[`${dateStr}-${log.subject_name}`] = log.status;
@@ -44,6 +67,7 @@ function updateStatus(msg) {
     if (el) el.textContent = msg;
 }
 
+// ── Setup Wizard ──────────────────────────────────────────────────────────────
 function showSetupWizard() {
     const container = document.querySelector('.container');
     const today = new Date().toISOString().split('T')[0];
@@ -52,9 +76,8 @@ function showSetupWizard() {
             <div class="wizard-header">
                 <p class="org-label">Banasthali Vidyapith | IT Department</p>
                 <h1>Semester Setup</h1>
-                <p class="wizard-subtitle">Set your semester duration and add subjects</p>
+                <p class="wizard-subtitle">Welcome, <strong>${username}</strong>! Set up your semester to get started.</p>
             </div>
-
             <div class="semester-range">
                 <h3>📅 Semester Duration</h3>
                 <div class="date-range-row">
@@ -68,16 +91,17 @@ function showSetupWizard() {
                     </div>
                 </div>
             </div>
-
             <div class="subjects-section">
                 <h3>📚 Subjects</h3>
                 <div id="subjectList"></div>
                 <button class="btn-secondary" onclick="addInput()">+ Add Subject</button>
             </div>
-
             <div class="wizard-actions">
                 <button class="btn-primary" onclick="saveSetup()">Launch Dashboard →</button>
             </div>
+            <p style="text-align:right; margin-top:16px;">
+                <span style="font-size:0.8rem; color:#aaa; cursor:pointer;" onclick="logout()">← Logout</span>
+            </p>
         </div>`;
     addInput();
 }
@@ -98,47 +122,32 @@ function addInput() {
                     <span>${d}</span>
                 </label>
             `).join('')}
-        </div>
-    `;
+        </div>`;
     list.appendChild(div);
     requestAnimationFrame(() => div.classList.add('visible'));
 }
 
 async function saveSetup() {
     const semStart = document.getElementById('semStart').value;
-    const semEnd = document.getElementById('semEnd').value;
+    const semEnd   = document.getElementById('semEnd').value;
+    if (!semStart || !semEnd) { alert('Please set both semester start and end dates.'); return; }
+    if (semEnd <= semStart)   { alert('End date must be after start date.'); return; }
 
-    if (!semStart || !semEnd) {
-        alert('Please set both semester start and end dates.');
-        return;
-    }
-    if (semEnd <= semStart) {
-        alert('End date must be after start date.');
-        return;
-    }
-
-    const entries = document.querySelectorAll('.subject-entry');
     const subjects = [];
-    entries.forEach(el => {
+    document.querySelectorAll('.subject-entry').forEach(el => {
         const name = el.querySelector('.sub-name').value.trim();
-        const days = Array.from(el.querySelectorAll('input[type=checkbox]:checked'))
-                         .map(cb => parseInt(cb.value));
+        const days = Array.from(el.querySelectorAll('input[type=checkbox]:checked')).map(cb => parseInt(cb.value));
         if (name) subjects.push({ name, days });
     });
-
-    if (subjects.length === 0) {
-        alert('Please add at least one subject.');
-        return;
-    }
+    if (subjects.length === 0) { alert('Please add at least one subject.'); return; }
 
     const btn = document.querySelector('.btn-primary');
     btn.textContent = 'Saving...';
     btn.disabled = true;
 
-    const response = await fetch('/api/save-attendance', {
+    const response = await authFetch('/api/save-attendance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attendance: {}, subjects, userId, semesterStart: semStart, semesterEnd: semEnd })
+        body: JSON.stringify({ attendance: {}, subjects, semesterStart: semStart, semesterEnd: semEnd })
     });
 
     if (response.ok) {
@@ -150,56 +159,51 @@ async function saveSetup() {
     }
 }
 
+// ── Sync ──────────────────────────────────────────────────────────────────────
 async function sync() {
     try {
-        const response = await fetch('/api/save-attendance', {
+        const response = await authFetch('/api/save-attendance', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                attendance: attendanceData,
-                subjects: config.subjects,
-                userId,
+                attendance:    attendanceData,
+                subjects:      config.subjects,
                 semesterStart: config.semesterStart,
-                semesterEnd: config.semesterEnd
+                semesterEnd:   config.semesterEnd
             })
         });
+        if (response.status === 401 || response.status === 403) { logout(); return false; }
         if (response.ok) updateStatus('✅ Saved');
         else updateStatus('⚠️ Save failed');
         return response.ok;
     } catch (err) {
-        updateStatus('⚠️ Offline');
+        updateStatus('⚠️ Offline — changes not saved');
         return false;
     }
 }
 
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
     const dash = document.getElementById('mainDashboard');
     if (!dash) return;
 
-    // Show semester info bar
     let semesterBar = '';
     if (config.semesterStart && config.semesterEnd) {
-        const start = new Date(config.semesterStart).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
-        const end   = new Date(config.semesterEnd).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
-        const today = new Date();
-        const endDate = new Date(config.semesterEnd);
-        const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-        const daysLeftText = daysLeft > 0 ? `${daysLeft} days remaining` : 'Semester ended';
+        const start    = new Date(config.semesterStart).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+        const end      = new Date(config.semesterEnd).toLocaleDateString('en-IN',   { day:'numeric', month:'short', year:'numeric' });
+        const today    = new Date(); today.setHours(0,0,0,0);
+        const daysLeft = Math.ceil((new Date(config.semesterEnd) - today) / (1000*60*60*24));
+        const daysText = daysLeft > 0 ? `${daysLeft} days remaining` : 'Semester ended';
+        const cls      = daysLeft <= 0 ? 'ended' : daysLeft <= 14 ? 'warning' : '';
         semesterBar = `
         <div class="semester-bar">
-            <span>📅 Semester: <strong>${start}</strong> → <strong>${end}</strong></span>
-            <span class="days-left ${daysLeft <= 0 ? 'ended' : daysLeft <= 14 ? 'warning' : ''}">${daysLeftText}</span>
+            <span>📅 <strong>${start}</strong> → <strong>${end}</strong></span>
+            <span class="days-left ${cls}">${daysText}</span>
         </div>`;
     }
 
-    if (config.subjects.length === 0) {
-        dash.innerHTML = semesterBar + `<p style="text-align:center;color:#aaa;margin-top:40px;">No subjects found.</p>`;
-        return;
-    }
-
     dash.innerHTML = semesterBar + config.subjects.map(sub => {
-        const stats = calculateStats(sub.name);
-        const color = stats.percent >= 75 ? 'var(--pastel-green)' : 'var(--pastel-pink)';
+        const stats       = calculateStats(sub.name);
+        const color       = stats.percent >= 75 ? 'var(--pastel-green)' : 'var(--pastel-pink)';
         const statusLabel = stats.percent >= 75 ? '✓ Safe' : '⚠ Low';
         return `
         <div class="subject-card">
@@ -217,60 +221,49 @@ function renderDashboard() {
             </div>
         </div>`;
     }).join('');
+
     updateGlobal();
 }
 
 function generateDates(sub) {
     let html = '';
     const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const semStart = config.semesterStart ? new Date(config.semesterStart) : null;
+    const semEnd   = config.semesterEnd   ? new Date(config.semesterEnd)   : null;
+    if (!semStart || !semEnd) return '<p style="color:#aaa;font-size:0.8rem;padding:10px;">No semester set.</p>';
 
-    // Use semester range
-    const start = config.semesterStart ? new Date(config.semesterStart) : (() => { const d = new Date(); d.setDate(d.getDate()-30); return d; })();
-    const end   = config.semesterEnd   ? new Date(config.semesterEnd)   : new Date();
+    const today = new Date(); today.setHours(0,0,0,0);
+    const effectiveEnd = semEnd < today ? semEnd : today;
+    if (effectiveEnd < semStart) return '<p style="color:#aaa;font-size:0.8rem;padding:10px;">Semester has not started yet.</p>';
 
-    // Cap end to today — can't mark future dates
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const effectiveEnd = end < today ? end : today;
-
-    // Show last 21 days within semester range
     const dates = [];
-    for (let d = new Date(effectiveEnd); d >= start; d.setDate(d.getDate() - 1)) {
+    for (let d = new Date(effectiveEnd); d >= semStart; d.setDate(d.getDate()-1)) {
         dates.push(new Date(d));
-        if (dates.length >= 21) break;
-    }
-
-    if (dates.length === 0) {
-        return '<p style="color:#aaa;font-size:0.8rem;padding:10px;">No dates in semester range yet.</p>';
+        if (dates.length >= 30) break;
     }
 
     for (const d of dates) {
+        if (!sub.days.includes(d.getDay())) continue;
         const dateStr = d.toISOString().split('T')[0];
-        const key = `${dateStr}-${sub.name}`;
-        const status = attendanceData[key] || 'None';
-
-        if (sub.days.includes(d.getDay())) {
-            html += `
-            <div class="date-chip ${status.toLowerCase()}">
-                <span class="day-name">${dayNames[d.getDay()]}</span>
-                <span class="date-num">${d.getDate()}</span>
-                <select class="status-select" onchange="mark('${key}', this.value)">
-                    <option value="None"      ${status==='None'      ?'selected':''}>–</option>
-                    <option value="Present"   ${status==='Present'   ?'selected':''}>P</option>
-                    <option value="Absent"    ${status==='Absent'    ?'selected':''}>A</option>
-                    <option value="Cancelled" ${status==='Cancelled' ?'selected':''}>C</option>
-                </select>
-            </div>`;
-        }
+        const key     = `${dateStr}-${sub.name}`;
+        const status  = attendanceData[key] || 'None';
+        html += `
+        <div class="date-chip ${status.toLowerCase()}">
+            <span class="day-name">${dayNames[d.getDay()]}</span>
+            <span class="date-num">${d.getDate()}</span>
+            <select class="status-select" onchange="mark('${key}', this.value)">
+                <option value="None"      ${status==='None'      ?'selected':''}>–</option>
+                <option value="Present"   ${status==='Present'   ?'selected':''}>P</option>
+                <option value="Absent"    ${status==='Absent'    ?'selected':''}>A</option>
+                <option value="Cancelled" ${status==='Cancelled' ?'selected':''}>C</option>
+            </select>
+        </div>`;
     }
-
-    return html || '<p style="color:#aaa;font-size:0.8rem;padding:10px;">No class days in this range.</p>';
+    return html || '<p style="color:#aaa;font-size:0.8rem;padding:10px;">No class days in semester range yet.</p>';
 }
 
 function calculateStats(subName) {
-    const records = Object.keys(attendanceData)
-        .filter(k => k.substring(11) === subName)
-        .map(k => attendanceData[k]);
+    const records = Object.keys(attendanceData).filter(k => k.substring(11) === subName).map(k => attendanceData[k]);
     const present = records.filter(v => v === 'Present').length;
     const total   = records.filter(v => v === 'Present' || v === 'Absent').length;
     return { percent: total === 0 ? 100 : Math.round((present/total)*100), present, total };
@@ -285,13 +278,10 @@ async function mark(key, val) {
 async function deleteSubject(subName) {
     if (!confirm(`Delete "${subName}" and all its records?`)) return;
     config.subjects = config.subjects.filter(s => s.name !== subName);
-    Object.keys(attendanceData).forEach(k => {
-        if (k.substring(11) === subName) delete attendanceData[k];
-    });
-    await fetch('/api/delete-subject', {
+    Object.keys(attendanceData).forEach(k => { if (k.substring(11) === subName) delete attendanceData[k]; });
+    await authFetch('/api/delete-subject', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, subjectName: subName })
+        body: JSON.stringify({ subjectName: subName })
     });
     await sync();
     renderDashboard();
@@ -299,11 +289,7 @@ async function deleteSubject(subName) {
 
 function updateGlobal() {
     let tP = 0, tT = 0;
-    config.subjects.forEach(s => {
-        const stats = calculateStats(s.name);
-        tP += stats.present;
-        tT += stats.total;
-    });
+    config.subjects.forEach(s => { const st = calculateStats(s.name); tP += st.present; tT += st.total; });
     const percent = tT === 0 ? 100 : Math.round((tP/tT)*100);
     const el = document.getElementById('globalPercentageText');
     if (el) el.textContent = percent + '%';
@@ -318,24 +304,13 @@ function renderChart(percent) {
     if (globalChart) globalChart.destroy();
     globalChart = new Chart(ctx, {
         type: 'doughnut',
-        data: {
-            datasets: [{
-                data: [percent, 100-percent],
-                backgroundColor: [percent >= 75 ? '#a2d2ff' : '#ffafcc', '#eee'],
-                borderWidth: 0,
-                circumference: 180,
-                rotation: 270
-            }]
-        },
-        options: {
-            cutout: '78%',
-            plugins: { tooltip: { enabled: false }, legend: { display: false } },
-            animation: { duration: 800 }
-        }
+        data: { datasets: [{ data: [percent, 100-percent], backgroundColor: [percent >= 75 ? '#a2d2ff' : '#ffafcc', '#eee'], borderWidth: 0, circumference: 180, rotation: 270 }] },
+        options: { cutout: '78%', plugins: { tooltip: { enabled: false }, legend: { display: false } }, animation: { duration: 800 } }
     });
 }
 
 function logout() {
-    localStorage.removeItem('attendance_user_id');
+    localStorage.removeItem('attendance_token');
+    localStorage.removeItem('attendance_username');
     window.location.href = '/';
 }

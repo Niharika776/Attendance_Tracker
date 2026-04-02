@@ -83,6 +83,15 @@
 
         input::placeholder { color: #b0b7c3; }
 
+        .hint {
+            font-size: 0.75rem;
+            color: #b0b7c3;
+            margin-top: -8px;
+            margin-bottom: 14px;
+            text-align: left;
+            padding-left: 4px;
+        }
+
         .btn-auth {
             display: block;
             width: 100%;
@@ -98,9 +107,9 @@
             cursor: pointer;
             transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
         }
-        .btn-auth:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(90,123,213,0.3); }
+        .btn-auth:hover  { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(90,123,213,0.3); }
         .btn-auth:active { transform: translateY(0); }
-        .btn-auth:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-auth:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
         .divider {
             margin: 20px 0 0;
@@ -140,79 +149,88 @@
         <div class="error-msg" id="errorMsg"></div>
 
         <input type="text" id="username" placeholder="Username" autocomplete="username">
+        <p class="hint" id="usernameHint" style="display:none;">Min. 3 characters</p>
+
         <input type="password" id="password" placeholder="Password" autocomplete="current-password"
                onkeydown="if(event.key==='Enter') handleAuth()">
+        <p class="hint" id="passwordHint" style="display:none;">Min. 4 characters</p>
 
         <button class="btn-auth" id="authBtn" onclick="handleAuth()">Continue</button>
 
         <p class="divider">
             <span id="toggleText">New here?</span>
-            <span class="toggle-link" onclick="toggleMode()"> <span id="toggleAction">Create an account</span></span>
+            <span class="toggle-link" onclick="toggleMode()">
+                <span id="toggleAction">Create an account</span>
+            </span>
         </p>
     </div>
 
     <script>
-    let isLoginMode = true;
+        let isLoginMode = true;
 
-    function toggleMode() {
-        isLoginMode = !isLoginMode;
-        document.getElementById('formTitle').textContent    = isLoginMode ? 'Welcome Back' : 'Create Account';
-        document.getElementById('toggleText').textContent   = isLoginMode ? 'New here?' : 'Already have an account?';
-        document.getElementById('toggleAction').textContent = isLoginMode ? 'Create an account' : 'Sign in';
-        document.getElementById('authBtn').textContent      = isLoginMode ? 'Continue' : 'Create Account';
-        clearError();
-    }
+        // Clear any stale session on login page load
+        localStorage.removeItem('attendance_token');
+        localStorage.removeItem('attendance_username');
 
-    function showError(msg) {
-        const el = document.getElementById('errorMsg');
-        el.textContent = msg;
-        el.style.display = 'block';
-    }
-
-    function clearError() {
-        document.getElementById('errorMsg').style.display = 'none';
-    }
-
-    // Clear localStorage on login page load — ensures clean state after logout
-    localStorage.removeItem('attendance_user_id');
-
-    async function handleAuth() {
-        clearError();
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value;
-
-        if (!username || !password) {
-            showError('Please enter both username and password.');
-            return;
+        function toggleMode() {
+            isLoginMode = !isLoginMode;
+            document.getElementById('formTitle').textContent    = isLoginMode ? 'Welcome Back'      : 'Create Account';
+            document.getElementById('toggleText').textContent   = isLoginMode ? 'New here?'         : 'Already have an account?';
+            document.getElementById('toggleAction').textContent = isLoginMode ? 'Create an account' : 'Sign in';
+            document.getElementById('authBtn').textContent      = isLoginMode ? 'Continue'          : 'Create Account';
+            document.getElementById('usernameHint').style.display = isLoginMode ? 'none' : 'block';
+            document.getElementById('passwordHint').style.display = isLoginMode ? 'none' : 'block';
+            clearError();
         }
 
-        const btn = document.getElementById('authBtn');
-        btn.textContent = 'Please wait…';
-        btn.disabled = true;
+        function showError(msg) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
 
-        try {
-            const endpoint = isLoginMode ? '/api/login' : '/api/signup';
-            const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
-            const data = await res.json();
+        function clearError() {
+            document.getElementById('errorMsg').style.display = 'none';
+        }
 
-            if (data.success) {
-                localStorage.setItem('attendance_user_id', data.userId);
-                window.location.href = '/dashboard';
-            } else {
-                showError(data.error || 'Something went wrong. Please try again.');
+        async function handleAuth() {
+            clearError();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                showError('Please enter both username and password.');
+                return;
+            }
+
+            const btn = document.getElementById('authBtn');
+            btn.textContent = 'Please wait…';
+            btn.disabled = true;
+
+            try {
+                const endpoint = isLoginMode ? '/api/login' : '/api/signup';
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    localStorage.setItem('attendance_token', data.token);
+                    localStorage.setItem('attendance_username', data.username);
+                    window.location.href = '/dashboard';
+                } else {
+                    showError(data.error || 'Something went wrong.');
+                    btn.textContent = isLoginMode ? 'Continue' : 'Create Account';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                showError('Cannot reach the server. Make sure it is running.');
                 btn.textContent = isLoginMode ? 'Continue' : 'Create Account';
                 btn.disabled = false;
             }
-        } catch (e) {
-            showError('Cannot reach the server. Make sure it is running.');
-            btn.textContent = isLoginMode ? 'Continue' : 'Create Account';
-            btn.disabled = false;
         }
-    }
-</script>
+    </script>
 </body>
 </html>

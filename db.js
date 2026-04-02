@@ -1,11 +1,11 @@
 const { Pool } = require('pg');
 
 const pool = new Pool({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'attendance_db',
-    password: 'niharika11',
-    port: 5432,
+    user:     process.env.DB_USER     || 'postgres',
+    host:     process.env.DB_HOST     || 'localhost',
+    database: process.env.DB_NAME     || 'attendance_db',
+    password: process.env.DB_PASSWORD || 'niharika11',
+    port:     parseInt(process.env.DB_PORT) || 5432,
 });
 
 module.exports = {
@@ -16,7 +16,7 @@ module.exports = {
 
     createUser: async ({ username, password }) => {
         const res = await pool.query(
-            'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id',
+            'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username',
             [username, password]
         );
         return res.rows[0];

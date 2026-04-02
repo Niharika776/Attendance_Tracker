@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: attendance_app
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_NAME=attendance_db
+      - DB_PASSWORD=niharika11
+      - DB_PORT=5432
+      - JWT_SECRET=banasthali_attendance_secret_key_2026
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+
+  db:
+    image: postgres:15-alpine
+    container_name: attendance_db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=niharika11
+      - POSTGRES_DB=attendance_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+volumes:
+  postgres_data:
