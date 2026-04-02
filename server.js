@@ -1,80 +1,92 @@
 const express = require('express');
 const path = require('path');
-const { Pool } = require('pg'); // Import the PostgreSQL driver 
+const db = require('./db');
 const app = express();
-const PORT = 3000;
 
-// 1. DATABASE CONNECTION CONFIG
-// Replace 'your_password' with the password you set during installation!
-const pool = new Pool({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'attendance_db',
-    password: 'niharika11', 
-    port: 5432,
-});
-
-app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// --- DATABASE API ROUTES ---
-
-// 2. SAVE DATA: Receives attendance from Frontend and saves to Postgres
-app.post('/api/save-attendance', async (req, res) => {
-    const { attendance, subjects } = req.body;
+app.post('/api/signup', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password)
+        return res.status(400).json({ success: false, error: "Username and password required" });
     try {
-        // Sync subjects
-        for (const sub of subjects) {
-            await pool.query(
-                'INSERT INTO subjects (name, class_days) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET class_days = $2',
-                [sub.name, sub.days]
-            );
-        }
-
-        // Sync attendance logs
-        for (const [key, status] of Object.entries(attendance)) {
-            if (key === 'lastUpdated') continue;
-
-            // FIX: Correctly extract the date and subject name
-            // If key is "2026-03-31-Maths", this gets "2026-03-31" and "Maths"
-            const lastHyphenIndex = key.lastIndexOf('-');
-            const dateStr = key.substring(0, lastHyphenIndex);
-            const subName = key.substring(lastHyphenIndex + 1);
-            
-            if (!dateStr || !subName) continue;
-
-            await pool.query(
-                'INSERT INTO attendance_logs (date, subject_name, status) VALUES ($1, $2, $3) ON CONFLICT (date, subject_name) DO UPDATE SET status = $3',
-                [dateStr, subName, status]
-            );
-        }
-        res.json({ success: true, message: "Saved to PostgreSQL!" });
+        const existing = await db.findUserByUsername(username);
+        if (existing) return res.status(400).json({ success: false, error: "Username already taken" });
+        const newUser = await db.createUser({ username, password });
+        res.json({ success: true, userId: newUser.id });
     } catch (err) {
-        console.error("Database Error:", err.message);
-        res.status(500).json({ error: err.message });
+        console.error("Signup error:", err.message);
+        res.status(500).json({ success: false, error: "Signup failed" });
     }
 });
 
-// 3. LOAD DATA: Pulls everything from Postgres for the Frontend
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password)
+        return res.status(400).json({ success: false, error: "Username and password required" });
+    try {
+        const user = await db.verifyUser(username, password);
+        if (user) res.json({ success: true, userId: user.id });
+        else res.status(401).json({ success: false, error: "Invalid credentials" });
+    } catch (err) {
+        console.error("Login error:", err.message);
+        res.status(500).json({ success: false, error: "Login failed" });
+    }
+});
+
 app.get('/api/load-data', async (req, res) => {
+    const userId = parseInt(req.query.userId);
+    if (!userId || isNaN(userId))
+        return res.json({ subjects: [], attendance: [], semesterStart: null, semesterEnd: null });
     try {
-        const subs = await pool.query('SELECT name, class_days as days FROM subjects');
-        const logs = await pool.query('SELECT date, subject_name, status FROM attendance_logs');
-        
-        res.json({
-            subjects: subs.rows,
-            attendance: logs.rows
-        });
+        const subjects = await db.getSubjects(userId);
+        const attendance = await db.getAttendance(userId);
+        const sem = await db.getSemester(userId);
+        res.json({ subjects, attendance, semesterStart: sem?.start || null, semesterEnd: sem?.end || null });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to fetch data" });
+        console.error("Load error:", err.message);
+        res.status(500).json({ error: "Load failed" });
     }
 });
 
-// Default Routes
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
-app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-app.listen(PORT, () => {
-    console.log(`✅ Server connected to DB and running at http://localhost:3000`);
+app.post('/api/save-attendance', async (req, res) => {
+    const userId = parseInt(req.body.userId);
+    if (!userId || isNaN(userId))
+        return res.status(400).json({ error: "Invalid userId" });
+    const { subjects, attendance, semesterStart, semesterEnd } = req.body;
+    try {
+        if (subjects && subjects.length > 0)
+            await db.updateUserSchedule(userId, subjects);
+        if (semesterStart && semesterEnd)
+            await db.saveSemester(userId, semesterStart, semesterEnd);
+        if (attendance && Object.keys(attendance).length > 0)
+            await db.syncAttendanceLogs(userId, attendance);
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Save error:", err.message);
+        res.status(500).json({ error: "Sync failed" });
+    }
 });
+
+app.delete('/api/delete-subject', async (req, res) => {
+    const userId = parseInt(req.body.userId);
+    const { subjectName } = req.body;
+    if (!userId || !subjectName)
+        return res.status(400).json({ error: "userId and subjectName required" });
+    try {
+        await db.deleteSubject(userId, subjectName);
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Delete error:", err.message);
+        res.status(500).json({ error: "Delete failed" });
+    }
+});
+
+// ⚠️ Static files - but NO default index.html
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
+app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running: http://localhost:${PORT}`));

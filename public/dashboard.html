@@ -3,35 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attendance Dashboard Pro</title>
+    <title>Attendance Dashboard — Banasthali Vidyapith</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
+
+        <div class="header-actions">
+            <p class="org-label">Banasthali Vidyapith &nbsp;|&nbsp; IT Department</p>
+            <button class="btn-logout" onclick="logout()">Logout</button>
+        </div>
+
         <h1>Semester Attendance Tracker</h1>
-        <p>Banasthali Vidyapith | IT Department</p>
 
         <div class="global-summary">
-            <div class="stats-card wide-card">
+            <div class="wide-card">
                 <div class="chart-container">
                     <canvas id="globalChart"></canvas>
                 </div>
                 <div class="global-info">
                     <h2>Overall Attendance</h2>
-                    <h1 id="globalPercentageText">0%</h1>
-                    <p id="statusMessage">Loading status...</p>
+                    <h1 id="globalPercentageText">—</h1>
+                    <p id="statusMessage">Loading from database…</p>
                 </div>
             </div>
         </div>
 
-        <div class="dashboard" id="mainDashboard">
-            </div>
-        
-        <div style="margin-top: 30px;">
-            <button onclick="resetSetup()" style="background: #ffafcc; font-size: 0.8rem; padding: 8px 15px; color: #444;">Reset Semester Settings</button>
-        </div>
+        <div id="mainDashboard"></div>
+
+        <p class="footer-note">Data stored in <code>attendance_db</code> · PostgreSQL</p>
+
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>

@@ -1,26 +1,218 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Login | Attendance Tracker</title>
-    <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — Attendance Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'DM Sans', 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #eef2ff 0%, #fce4ec 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .login-box {
+            width: 100%;
+            max-width: 400px;
+            padding: 44px 40px;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(90, 123, 213, 0.12);
+            text-align: center;
+            animation: fadeUp 0.4s ease both;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .org-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #8b92a5;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .logo-title {
+            font-size: 1.9rem;
+            font-weight: 700;
+            color: #5a7bd5;
+            letter-spacing: -0.02em;
+            margin-bottom: 32px;
+        }
+
+        h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #2d3142;
+            margin-bottom: 20px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            display: block;
+            width: 100%;
+            padding: 13px 16px;
+            margin-bottom: 14px;
+            border: 1.5px solid #e8eaf0;
+            border-radius: 12px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.95rem;
+            color: #2d3142;
+            background: #fafbfc;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: #5a7bd5;
+            box-shadow: 0 0 0 3px rgba(90, 123, 213, 0.12);
+            background: white;
+        }
+
+        input::placeholder { color: #b0b7c3; }
+
+        .btn-auth {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            margin-top: 8px;
+            background: #5a7bd5;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-family: 'DM Sans', sans-serif;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+        }
+        .btn-auth:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(90,123,213,0.3); }
+        .btn-auth:active { transform: translateY(0); }
+        .btn-auth:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .divider {
+            margin: 20px 0 0;
+            font-size: 0.85rem;
+            color: #b0b7c3;
+        }
+
+        .toggle-link {
+            color: #5a7bd5;
+            cursor: pointer;
+            font-weight: 600;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s;
+        }
+        .toggle-link:hover { border-bottom-color: #5a7bd5; }
+
+        .error-msg {
+            background: #fff5f7;
+            color: #e0556a;
+            border: 1px solid #ffd0d8;
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 0.85rem;
+            margin-bottom: 14px;
+            display: none;
+            text-align: left;
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <div class="log-card" style="max-width: 400px; margin: 100px auto;">
-            <h2>User Login</h2>
-            <form id="loginForm">
-                <input type="text" id="username" placeholder="Username" required style="width: 100%; margin: 10px 0; padding: 12px; border-radius: 5px; border: 1px solid #ccc;">
-                <input type="password" id="password" placeholder="Password" required style="width: 100%; margin: 10px 0; padding: 12px; border-radius: 5px; border: 1px solid #ccc;">
-                <button type="submit">Enter Dashboard</button>
-            </form>
-        </div>
+    <div class="login-box">
+        <p class="org-label">Banasthali Vidyapith &nbsp;|&nbsp; IT</p>
+        <h1 class="logo-title">Attendance Tracker</h1>
+
+        <h2 id="formTitle">Welcome Back</h2>
+
+        <div class="error-msg" id="errorMsg"></div>
+
+        <input type="text" id="username" placeholder="Username" autocomplete="username">
+        <input type="password" id="password" placeholder="Password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') handleAuth()">
+
+        <button class="btn-auth" id="authBtn" onclick="handleAuth()">Continue</button>
+
+        <p class="divider">
+            <span id="toggleText">New here?</span>
+            <span class="toggle-link" onclick="toggleMode()"> <span id="toggleAction">Create an account</span></span>
+        </p>
     </div>
+
     <script>
-        document.getElementById('loginForm').onsubmit = (e) => {
-            e.preventDefault();
-            // Redirect to the dashboard
-            window.location.href = '/dashboard'; 
-        };
-    </script>
+    let isLoginMode = true;
+
+    function toggleMode() {
+        isLoginMode = !isLoginMode;
+        document.getElementById('formTitle').textContent    = isLoginMode ? 'Welcome Back' : 'Create Account';
+        document.getElementById('toggleText').textContent   = isLoginMode ? 'New here?' : 'Already have an account?';
+        document.getElementById('toggleAction').textContent = isLoginMode ? 'Create an account' : 'Sign in';
+        document.getElementById('authBtn').textContent      = isLoginMode ? 'Continue' : 'Create Account';
+        clearError();
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorMsg');
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
+
+    function clearError() {
+        document.getElementById('errorMsg').style.display = 'none';
+    }
+
+    // Clear localStorage on login page load — ensures clean state after logout
+    localStorage.removeItem('attendance_user_id');
+
+    async function handleAuth() {
+        clearError();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!username || !password) {
+            showError('Please enter both username and password.');
+            return;
+        }
+
+        const btn = document.getElementById('authBtn');
+        btn.textContent = 'Please wait…';
+        btn.disabled = true;
+
+        try {
+            const endpoint = isLoginMode ? '/api/login' : '/api/signup';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                localStorage.setItem('attendance_user_id', data.userId);
+                window.location.href = '/dashboard';
+            } else {
+                showError(data.error || 'Something went wrong. Please try again.');
+                btn.textContent = isLoginMode ? 'Continue' : 'Create Account';
+                btn.disabled = false;
+            }
+        } catch (e) {
+            showError('Cannot reach the server. Make sure it is running.');
+            btn.textContent = isLoginMode ? 'Continue' : 'Create Account';
+            btn.disabled = false;
+        }
+    }
+</script>
 </body>
 </html>

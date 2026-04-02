@@ -1,198 +1,341 @@
-let config = { subjects: [], cancelMode: 'holiday' };
-let attendanceData = { lastUpdated: {} };
+let config = { subjects: [], semesterStart: null, semesterEnd: null };
+let attendanceData = {};
 let globalChart = null;
 
-// --- 1. INITIALIZATION (FETCH FROM DATABASE) ---
+const userId = localStorage.getItem('attendance_user_id');
+
+if (window.location.pathname !== '/dashboard') {
+    // on login page, do nothing
+} else {
+    if (!userId || userId === 'null' || userId === 'undefined') {
+        window.location.href = '/';
+    } else {
+        init();
+    }
+}
+
 async function init() {
     try {
-        const response = await fetch('/api/load-data');
-        const data = await response.json();
-
+        const res = await fetch(`/api/load-data?userId=${userId}`);
+        if (!res.ok) throw new Error('Server error');
+        const data = await res.json();
         if (data.subjects && data.subjects.length > 0) {
-            // Transform database rows back into our app's format
             config.subjects = data.subjects;
-            
-            // Reconstruct attendanceData object from array of logs
-            attendanceData = { lastUpdated: {} };
+            config.semesterStart = data.semesterStart;
+            config.semesterEnd = data.semesterEnd;
             data.attendance.forEach(log => {
                 const dateStr = new Date(log.date).toISOString().split('T')[0];
-                const key = `${dateStr}-${log.subject_name}`;
-                attendanceData[key] = log.status;
+                attendanceData[`${dateStr}-${log.subject_name}`] = log.status;
             });
-
             renderDashboard();
+            updateStatus('✅ Synced with database');
         } else {
             showSetupWizard();
         }
     } catch (err) {
-        console.error("Failed to load from DB:", err);
-        // Fallback to Wizard if DB is empty or unreachable
+        console.error('Init failed:', err);
+        updateStatus('⚠️ Could not connect to server');
         showSetupWizard();
     }
 }
 
-// --- 2. SETUP WIZARD ---
-function showSetupWizard() {
-    const container = document.querySelector('.container');
-    container.innerHTML = `
-        <div class="log-card wizard-card">
-            <h2>🌸 Semester Setup</h2>
-            <p>Your settings will now be saved to PostgreSQL.</p>
-            <div id="subjectInputList"></div>
-            <button onclick="addSubjectInput()" style="background: var(--pastel-pink); margin: 10px 0;">+ Add Subject</button>
-            <button onclick="saveSetup()" style="background: var(--pastel-green); width: 100%; margin-top: 20px;">Save to Database</button>
-        </div>
-    `;
-    addSubjectInput();
+function updateStatus(msg) {
+    const el = document.getElementById('statusMessage');
+    if (el) el.textContent = msg;
 }
 
-function addSubjectInput() {
-    const list = document.getElementById('subjectInputList');
+function showSetupWizard() {
+    const container = document.querySelector('.container');
+    const today = new Date().toISOString().split('T')[0];
+    container.innerHTML = `
+        <div class="wizard-card">
+            <div class="wizard-header">
+                <p class="org-label">Banasthali Vidyapith | IT Department</p>
+                <h1>Semester Setup</h1>
+                <p class="wizard-subtitle">Set your semester duration and add subjects</p>
+            </div>
+
+            <div class="semester-range">
+                <h3>📅 Semester Duration</h3>
+                <div class="date-range-row">
+                    <div class="date-field">
+                        <label>Start Date</label>
+                        <input type="date" id="semStart" value="${today}">
+                    </div>
+                    <div class="date-field">
+                        <label>End Date</label>
+                        <input type="date" id="semEnd">
+                    </div>
+                </div>
+            </div>
+
+            <div class="subjects-section">
+                <h3>📚 Subjects</h3>
+                <div id="subjectList"></div>
+                <button class="btn-secondary" onclick="addInput()">+ Add Subject</button>
+            </div>
+
+            <div class="wizard-actions">
+                <button class="btn-primary" onclick="saveSetup()">Launch Dashboard →</button>
+            </div>
+        </div>`;
+    addInput();
+}
+
+function addInput() {
+    const list = document.getElementById('subjectList');
     const div = document.createElement('div');
     div.className = 'subject-entry';
     div.innerHTML = `
-        <input type="text" placeholder="Subject Name" class="sub-name" style="width:100%; padding:10px; margin-bottom:10px; border-radius:8px; border:1px solid #ddd;">
-        <div class="days-selection">
-            ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => `
-                <label class="day-checkbox"><input type="checkbox" value="${i}"> ${day}</label>
+        <div class="entry-header">
+            <input type="text" class="sub-name" placeholder="Subject Name (e.g. DBMS, OS, CN)">
+            <button class="btn-remove" onclick="this.closest('.subject-entry').remove()">✕</button>
+        </div>
+        <div class="day-grid">
+            ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d, i) => `
+                <label class="day-label">
+                    <input type="checkbox" value="${i}">
+                    <span>${d}</span>
+                </label>
             `).join('')}
         </div>
     `;
     list.appendChild(div);
+    requestAnimationFrame(() => div.classList.add('visible'));
 }
 
-// --- 3. SYNCING TO DATABASE (POST REQUEST) ---
 async function saveSetup() {
+    const semStart = document.getElementById('semStart').value;
+    const semEnd = document.getElementById('semEnd').value;
+
+    if (!semStart || !semEnd) {
+        alert('Please set both semester start and end dates.');
+        return;
+    }
+    if (semEnd <= semStart) {
+        alert('End date must be after start date.');
+        return;
+    }
+
     const entries = document.querySelectorAll('.subject-entry');
-    config.subjects = [];
-    entries.forEach(entry => {
-        const name = entry.querySelector('.sub-name').value;
-        const days = Array.from(entry.querySelectorAll('input[type="checkbox"]:checked')).map(cb => parseInt(cb.value));
-        if (name) config.subjects.push({ name, days });
+    const subjects = [];
+    entries.forEach(el => {
+        const name = el.querySelector('.sub-name').value.trim();
+        const days = Array.from(el.querySelectorAll('input[type=checkbox]:checked'))
+                         .map(cb => parseInt(cb.value));
+        if (name) subjects.push({ name, days });
     });
 
-    if (config.subjects.length > 0) {
-        await syncWithDatabase();
-        location.reload();
+    if (subjects.length === 0) {
+        alert('Please add at least one subject.');
+        return;
+    }
+
+    const btn = document.querySelector('.btn-primary');
+    btn.textContent = 'Saving...';
+    btn.disabled = true;
+
+    const response = await fetch('/api/save-attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attendance: {}, subjects, userId, semesterStart: semStart, semesterEnd: semEnd })
+    });
+
+    if (response.ok) {
+        window.location.href = '/dashboard';
     } else {
-        alert("Please add at least one subject!");
+        alert('Database error: failed to save. Check your server terminal.');
+        btn.textContent = 'Launch Dashboard →';
+        btn.disabled = false;
     }
 }
 
-async function syncWithDatabase() {
+async function sync() {
     try {
         const response = await fetch('/api/save-attendance', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 attendance: attendanceData,
-                subjects: config.subjects
+                subjects: config.subjects,
+                userId,
+                semesterStart: config.semesterStart,
+                semesterEnd: config.semesterEnd
             })
         });
-        const result = await response.json();
-        console.log(result.message);
+        if (response.ok) updateStatus('✅ Saved');
+        else updateStatus('⚠️ Save failed');
+        return response.ok;
     } catch (err) {
-        console.error("Sync failed:", err);
-        alert("Could not save to Database. Check your server terminal.");
+        updateStatus('⚠️ Offline');
+        return false;
     }
 }
 
-// --- 4. DASHBOARD & INTERACTION ---
 function renderDashboard() {
-    updateGlobalStats();
     const dash = document.getElementById('mainDashboard');
-    dash.innerHTML = '';
+    if (!dash) return;
 
-    config.subjects.forEach(sub => {
-        const stats = calculateSubjectStats(sub.name);
-        const card = document.createElement('div');
-        card.className = 'subject-card';
-        card.innerHTML = `
-            <div class="subject-header"><h3>${sub.name}</h3></div>
-            <div class="calendar-container">
-                <div class="subject-status-lead" style="background: ${stats.percent >= 75 ? 'var(--pastel-green)' : 'var(--pastel-pink)'}">
-                    <span class="label">Current</span>
-                    <span class="value">${stats.percent}%</span>
-                    <small>${stats.present}/${stats.total}</small>
-                </div>
-                <div class="calendar-strip">${generateDateStrip(sub)}</div>
+    // Show semester info bar
+    let semesterBar = '';
+    if (config.semesterStart && config.semesterEnd) {
+        const start = new Date(config.semesterStart).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+        const end   = new Date(config.semesterEnd).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+        const today = new Date();
+        const endDate = new Date(config.semesterEnd);
+        const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+        const daysLeftText = daysLeft > 0 ? `${daysLeft} days remaining` : 'Semester ended';
+        semesterBar = `
+        <div class="semester-bar">
+            <span>📅 Semester: <strong>${start}</strong> → <strong>${end}</strong></span>
+            <span class="days-left ${daysLeft <= 0 ? 'ended' : daysLeft <= 14 ? 'warning' : ''}">${daysLeftText}</span>
+        </div>`;
+    }
+
+    if (config.subjects.length === 0) {
+        dash.innerHTML = semesterBar + `<p style="text-align:center;color:#aaa;margin-top:40px;">No subjects found.</p>`;
+        return;
+    }
+
+    dash.innerHTML = semesterBar + config.subjects.map(sub => {
+        const stats = calculateStats(sub.name);
+        const color = stats.percent >= 75 ? 'var(--pastel-green)' : 'var(--pastel-pink)';
+        const statusLabel = stats.percent >= 75 ? '✓ Safe' : '⚠ Low';
+        return `
+        <div class="subject-card">
+            <div class="subject-header">
+                <h3>${sub.name}</h3>
+                <button class="btn-delete" onclick="deleteSubject('${sub.name}')">🗑</button>
             </div>
-        `;
-        dash.appendChild(card);
-    });
+            <div class="calendar-container">
+                <div class="subject-status-lead" style="background:${color}">
+                    <span class="value">${stats.percent}%</span>
+                    <span class="label">${statusLabel}</span>
+                    <span class="sub-label">${stats.present}/${stats.total} classes</span>
+                </div>
+                <div class="calendar-strip">${generateDates(sub)}</div>
+            </div>
+        </div>`;
+    }).join('');
+    updateGlobal();
 }
 
-function generateDateStrip(sub) {
+function generateDates(sub) {
     let html = '';
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    // Use semester range
+    const start = config.semesterStart ? new Date(config.semesterStart) : (() => { const d = new Date(); d.setDate(d.getDate()-30); return d; })();
+    const end   = config.semesterEnd   ? new Date(config.semesterEnd)   : new Date();
+
+    // Cap end to today — can't mark future dates
     const today = new Date();
-    for (let i = 0; i < 30; i++) {
-        const d = new Date();
-        d.setDate(today.getDate() - i);
+    today.setHours(0,0,0,0);
+    const effectiveEnd = end < today ? end : today;
+
+    // Show last 21 days within semester range
+    const dates = [];
+    for (let d = new Date(effectiveEnd); d >= start; d.setDate(d.getDate() - 1)) {
+        dates.push(new Date(d));
+        if (dates.length >= 21) break;
+    }
+
+    if (dates.length === 0) {
+        return '<p style="color:#aaa;font-size:0.8rem;padding:10px;">No dates in semester range yet.</p>';
+    }
+
+    for (const d of dates) {
         const dateStr = d.toISOString().split('T')[0];
         const key = `${dateStr}-${sub.name}`;
         const status = attendanceData[key] || 'None';
-        const isClassDay = sub.days.includes(d.getDay());
 
-        if (isClassDay) {
+        if (sub.days.includes(d.getDay())) {
             html += `
-                <div class="date-chip ${status.toLowerCase()}">
-                    <span class="day-name">${d.toLocaleDateString('en-US', { weekday: 'short' })}</span>
-                    <span class="date-num">${d.getDate()} ${d.toLocaleDateString('en-US', { month: 'short' })}</span>
-                    <select onchange="markStatus('${key}', this.value)">
-                        <option value="None" ${status === 'None' ? 'selected' : ''}>-</option>
-                        <option value="Present" ${status === 'Present' ? 'selected' : ''}>P</option>
-                        <option value="Absent" ${status === 'Absent' ? 'selected' : ''}>A</option>
-                        <option value="Cancelled" ${status === 'Cancelled' ? 'selected' : ''}>C</option>
-                    </select>
-                </div>`;
-        } else {
-            html += `<div class="date-chip no-class">
-                <span class="day-name">${d.toLocaleDateString('en-US', { weekday: 'short' })}</span>
-                <span class="date-num">${d.getDate()} ${d.toLocaleDateString('en-US', { month: 'short' })}</span>
-                <div style="font-size:0.6rem; color:#ccc; margin-top:10px; font-weight:bold;">OFF</div>
+            <div class="date-chip ${status.toLowerCase()}">
+                <span class="day-name">${dayNames[d.getDay()]}</span>
+                <span class="date-num">${d.getDate()}</span>
+                <select class="status-select" onchange="mark('${key}', this.value)">
+                    <option value="None"      ${status==='None'      ?'selected':''}>–</option>
+                    <option value="Present"   ${status==='Present'   ?'selected':''}>P</option>
+                    <option value="Absent"    ${status==='Absent'    ?'selected':''}>A</option>
+                    <option value="Cancelled" ${status==='Cancelled' ?'selected':''}>C</option>
+                </select>
             </div>`;
         }
     }
-    return html;
+
+    return html || '<p style="color:#aaa;font-size:0.8rem;padding:10px;">No class days in this range.</p>';
 }
 
-function calculateSubjectStats(subjectName) {
-    const records = Object.keys(attendanceData).filter(k => k.endsWith(subjectName)).map(k => attendanceData[k]);
+function calculateStats(subName) {
+    const records = Object.keys(attendanceData)
+        .filter(k => k.substring(11) === subName)
+        .map(k => attendanceData[k]);
     const present = records.filter(v => v === 'Present').length;
-    let total = records.filter(v => v === 'Present' || v === 'Absent').length;
-    return { present, total, percent: total === 0 ? 100 : Math.round((present / total) * 100) };
+    const total   = records.filter(v => v === 'Present' || v === 'Absent').length;
+    return { percent: total === 0 ? 100 : Math.round((present/total)*100), present, total };
 }
 
-async function markStatus(key, status) {
-    attendanceData[key] = status;
-    // Every time you change a status, we sync to the DB!
-    await syncWithDatabase(); 
+async function mark(key, val) {
+    attendanceData[key] = val;
+    renderDashboard();
+    await sync();
+}
+
+async function deleteSubject(subName) {
+    if (!confirm(`Delete "${subName}" and all its records?`)) return;
+    config.subjects = config.subjects.filter(s => s.name !== subName);
+    Object.keys(attendanceData).forEach(k => {
+        if (k.substring(11) === subName) delete attendanceData[k];
+    });
+    await fetch('/api/delete-subject', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, subjectName: subName })
+    });
+    await sync();
     renderDashboard();
 }
 
-function updateGlobalStats() {
-    let tP = 0, tC = 0;
-    config.subjects.forEach(s => { const st = calculateSubjectStats(s.name); tP += st.present; tC += st.total; });
-    const percent = tC === 0 ? 100 : Math.round((tP / tC) * 100);
-    document.getElementById('globalPercentageText').innerText = percent + "%";
-    renderGlobalChart(percent);
+function updateGlobal() {
+    let tP = 0, tT = 0;
+    config.subjects.forEach(s => {
+        const stats = calculateStats(s.name);
+        tP += stats.present;
+        tT += stats.total;
+    });
+    const percent = tT === 0 ? 100 : Math.round((tP/tT)*100);
+    const el = document.getElementById('globalPercentageText');
+    if (el) el.textContent = percent + '%';
+    updateStatus(percent >= 75 ? '✅ Attendance looks good!' : '⚠️ Below 75% — take action!');
+    renderChart(percent);
 }
 
-function renderGlobalChart(percent) {
-    const ctx = document.getElementById('globalChart').getContext('2d');
+function renderChart(percent) {
+    const canvas = document.getElementById('globalChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     if (globalChart) globalChart.destroy();
     globalChart = new Chart(ctx, {
-        type: 'doughnut', data: { datasets: [{ data: [percent, 100 - percent], backgroundColor: ['#a2d2ff', '#eee'], borderWidth: 0, circumference: 180, rotation: 270 }] },
-        options: { cutout: '85%', responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false } } }
+        type: 'doughnut',
+        data: {
+            datasets: [{
+                data: [percent, 100-percent],
+                backgroundColor: [percent >= 75 ? '#a2d2ff' : '#ffafcc', '#eee'],
+                borderWidth: 0,
+                circumference: 180,
+                rotation: 270
+            }]
+        },
+        options: {
+            cutout: '78%',
+            plugins: { tooltip: { enabled: false }, legend: { display: false } },
+            animation: { duration: 800 }
+        }
     });
 }
 
-function resetSetup() { 
-    if(confirm("Permanently clear database?")) { 
-        // We will implement a DELETE route later if needed
-        localStorage.clear(); 
-        location.reload(); 
-    } 
+function logout() {
+    localStorage.removeItem('attendance_user_id');
+    window.location.href = '/';
 }
-
-init();
